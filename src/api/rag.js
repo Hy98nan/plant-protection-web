@@ -1,5 +1,15 @@
 import axios from 'axios'
-import { getToken } from '@/utils/auth'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  getToken,
+  getRefreshToken,
+  setToken,
+  setRefreshToken,
+  setTokenExpires,
+  isTokenExpiringSoon,
+  clearAuth
+} from '@/utils/auth'
+import router from '@/router'
 
 const RAG_API_BASE = '/rag-api'
 
@@ -8,17 +18,144 @@ const ragAxios = axios.create({
   timeout: 120000
 })
 
-ragAxios.interceptors.request.use((config) => {
-  const token = getToken()
-  if (token) {
-    config.headers['Authorization'] = `Bearer ${token}`
+let isRefreshing = false
+let refreshQueue = []
+
+const refreshToken = () => {
+  const refreshTokenValue = getRefreshToken()
+  if (!refreshTokenValue) {
+    return Promise.reject(new Error('no refresh token'))
   }
-  return config
-})
+  return axios.post('/api/auth/refresh', {
+    refreshToken: refreshTokenValue
+  })
+}
+
+const processQueue = (error, token = null) => {
+  refreshQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error)
+    } else {
+      prom.resolve(token)
+    }
+  })
+  refreshQueue = []
+}
+
+let isHandlingLogout = false
+let authFailed = false
+
+const handleUnauthorized = (message, forceDialog = false) => {
+  if (isHandlingLogout) return
+  if (authFailed && !forceDialog) return
+
+  isHandlingLogout = true
+  authFailed = true
+
+  const msg = message || 'RAG服务认证已过期，请重新登录'
+
+  clearAuth()
+
+  ElMessageBox.confirm(msg, '提示', {
+    confirmButtonText: '重新登录',
+    cancelButtonText: '取消',
+    type: 'warning',
+    showClose: false
+  }).then(() => {
+    router.push('/login')
+    isHandlingLogout = false
+  }).catch(() => {
+    isHandlingLogout = false
+    authFailed = false
+  })
+}
+
+const resetAuthFailed = () => {
+  authFailed = false
+}
+
+ragAxios.interceptors.request.use(
+  async (config) => {
+    const token = getToken()
+    if (token) {
+      if (isTokenExpiringSoon()) {
+        if (!isRefreshing) {
+          isRefreshing = true
+          try {
+            const res = await refreshToken()
+            if (res.data.code === 200) {
+              const data = res.data.data
+              setToken(data.token)
+              setRefreshToken(data.refreshToken)
+              setTokenExpires(data.expiresIn)
+              config.headers['Authorization'] = `Bearer ${data.token}`
+              processQueue(null, data.token)
+            } else {
+              processQueue(new Error(res.data.message || 'refresh failed'))
+            }
+          } catch (e) {
+            processQueue(e)
+          } finally {
+            isRefreshing = false
+          }
+        } else {
+          await new Promise((resolve, reject) => {
+            refreshQueue.push({ resolve, reject })
+          }).then(newToken => {
+            config.headers['Authorization'] = `Bearer ${newToken}`
+          }).catch(() => {
+            return Promise.reject(new Error('token refresh failed'))
+          })
+        }
+      } else {
+        config.headers['Authorization'] = `Bearer ${token}`
+      }
+    }
+    return config
+  },
+  (error) => {
+    console.error('RAG请求错误:', error)
+    return Promise.reject(error)
+  }
+)
+
+ragAxios.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response) {
+      const status = error.response.status
+      const data = error.response.data
+      const config = error.config
+
+      if (status === 401) {
+        if (!config?.silentAuth) {
+          handleUnauthorized(data?.message || 'RAG服务认证已过期，请重新登录')
+        }
+      } else if (status === 403) {
+        const msg = data?.message || '配额已用完或无权限访问'
+        if (!config?.silentAuth) {
+          ElMessage.warning(msg)
+        }
+      } else if (status === 429) {
+        const msg = data?.message || '请求过于频繁，请稍后再试'
+        if (!config?.silentAuth) {
+          ElMessage.warning(msg)
+        }
+      } else if (status === 500) {
+        console.error('RAG服务内部错误:', data?.message)
+      }
+    } else if (error.code === 'ECONNABORTED') {
+      console.error('RAG请求超时')
+    } else {
+      console.error('RAG网络异常:', error.message)
+    }
+    return Promise.reject(error)
+  }
+)
 
 export const ragApi = {
-  getModels() {
-    return ragAxios.get('/chat/models')
+  getModels(silent = true) {
+    return ragAxios.get('/chat/models', { silentAuth: silent })
   },
 
   query(question, modelId, sessionId) {
@@ -47,12 +184,29 @@ export const ragApi = {
         'Authorization': `Bearer ${getToken() || ''}`
       },
       body: JSON.stringify({ question, modelId, sessionId })
-    }).then(response => {
+    }).then(async response => {
       console.log('[SSE] Response:', response.status, response.statusText)
       console.log('[SSE] Content-Type:', response.headers.get('content-type'))
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        let errorMsg = `请求失败 (${response.status})`
+        try {
+          const text = await response.text()
+          const parsed = JSON.parse(text)
+          errorMsg = parsed.message || errorMsg
+        } catch {
+          // 响应不是 JSON，使用默认错误信息
+        }
+
+        if (response.status === 401) {
+          handleUnauthorized(errorMsg)
+        } else if (response.status === 403) {
+          ElMessage.warning(errorMsg || '今日配额已用完，请明天再试')
+        } else if (response.status === 429) {
+          ElMessage.warning(errorMsg || '请求过于频繁，请稍后再试')
+        }
+
+        throw new Error(errorMsg)
       }
 
       if (!response.body) {
@@ -231,9 +385,10 @@ export const ragApi = {
     })
   },
 
-  getDocuments(page = 1, size = 10) {
+  getDocuments(page = 1, size = 10, silent = true) {
     return ragAxios.get('/documents/list', {
-      params: { page, size }
+      params: { page, size },
+      silentAuth: silent
     })
   },
 
@@ -243,6 +398,24 @@ export const ragApi = {
 
   deleteDocument(docId) {
     return ragAxios.delete(`/documents/${docId}`)
+  },
+
+  getCurrentQuota(silent = true) {
+    return ragAxios.get('/quota/current', { silentAuth: silent })
+  },
+
+  getQuotaUsage(page = 1, size = 10, params = {}) {
+    return ragAxios.get('/quota/usage', {
+      params: { page, size, ...params }
+    })
+  },
+
+  getQuotaStats(params = {}) {
+    return ragAxios.get('/quota/stats', { params })
+  },
+
+  resetAuthFailed() {
+    return resetAuthFailed()
   }
 }
 

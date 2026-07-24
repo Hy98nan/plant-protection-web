@@ -64,6 +64,14 @@
             </el-button>
           </div>
           <div class="header-right">
+            <div class="quota-info" v-if="quotaInfo">
+              <el-tooltip :content="`今日剩余 ${quotaInfo.remaining} 次，每分钟 ${quotaInfo.remainingPerMinute} 次`">
+                <span class="quota-text">
+                  <el-icon size="14" icon="data-analysis" />
+                  剩余 {{ quotaInfo.remaining }}/{{ quotaInfo.dailyLimit }}
+                </span>
+              </el-tooltip>
+            </div>
             <div class="mode-switch">
               <span class="mode-label" :class="{ active: !streamMode }">同步</span>
               <el-switch
@@ -99,7 +107,18 @@
         </div>
 
         <div class="chat-messages" ref="messagesRef">
-          <div v-if="messages.length === 0" class="empty-chat">
+          <div v-if="authError" class="auth-error">
+            <div class="auth-error-icon">
+              <el-icon size="64" color="#e6a23c" icon="warning" />
+            </div>
+            <h3>{{ authError }}</h3>
+            <p>请登录后使用智能问答功能</p>
+            <el-button type="primary" icon="user" @click="goToLogin">
+              去登录
+            </el-button>
+          </div>
+
+          <div v-else-if="messages.length === 0" class="empty-chat">
             <div class="empty-icon">
               <el-icon size="80" color="#c0c4cc" icon="message" />
             </div>
@@ -244,15 +263,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ragApi from '@/api/rag'
 import { marked } from 'marked'
+import { getToken } from '@/utils/auth'
+import router from '@/router'
 
-// 配置 marked 选项
 marked.setOptions({
-  breaks: true,  // 支持换行
-  gfm: true      // GitHub Flavored Markdown
+  breaks: true,
+  gfm: true
 })
 
 const messagesRef = ref(null)
@@ -266,12 +286,20 @@ const sessionId = ref('')
 const streamMode = ref(false)
 const documents = ref([])
 const loadingDocs = ref(false)
+const quotaInfo = ref(null)
+const authError = ref('')
+
+const hasToken = computed(() => !!getToken())
 
 const showUploadDialog = ref(false)
 const uploadRef = ref(null)
 const fileList = ref([])
 const uploadCategory = ref('')
 const uploading = ref(false)
+
+const IDLE_TIMEOUT = 30 * 60 * 1000
+let idleTimer = null
+const showIdleWarning = ref(false)
 
 const suggestions = [
   '如何申请设备维修？',
@@ -280,7 +308,79 @@ const suggestions = [
   '报销流程是什么？'
 ]
 
-const loadModels = async () => {
+const resetIdleTimer = () => {
+  if (idleTimer) {
+    clearTimeout(idleTimer)
+  }
+  if (showIdleWarning.value) {
+    showIdleWarning.value = false
+  }
+  idleTimer = setTimeout(() => {
+    handleIdleTimeout()
+  }, IDLE_TIMEOUT)
+}
+
+const handleIdleTimeout = () => {
+  showIdleWarning.value = true
+  ElMessageBox.confirm(
+    '您已长时间未操作，为了保护您的账户安全，请点击继续以保持会话。',
+    '会话即将超时',
+    {
+      confirmButtonText: '继续使用',
+      cancelButtonText: '退出',
+      type: 'warning',
+      showClose: false,
+      closeOnClickModal: false
+    }
+  ).then(() => {
+    showIdleWarning.value = false
+    resetIdleTimer()
+    loadQuota()
+  }).catch(() => {
+    showIdleWarning.value = false
+    if (window.opener) {
+      window.close()
+    }
+  })
+}
+
+const handleUserActivity = () => {
+  if (!showIdleWarning.value) {
+    resetIdleTimer()
+  }
+}
+
+const goToLogin = () => {
+  if (window.opener) {
+    window.opener.location.href = '/login'
+    window.close()
+  } else {
+    router.push('/login')
+  }
+}
+
+const loadQuota = async (showError = false) => {
+  if (!hasToken.value) return
+  try {
+    const res = await ragApi.getCurrentQuota()
+    if (res.data.code === 200) {
+      quotaInfo.value = res.data.data
+      authError.value = ''
+    }
+  } catch (e) {
+    if (e.response && e.response.status === 401) {
+      authError.value = e.response.data?.message || '登录已过期，请重新登录'
+    } else {
+      console.warn('加载配额信息失败', e)
+    }
+  }
+}
+
+const loadModels = async (showError = false) => {
+  if (!hasToken.value) {
+    authError.value = '请先登录后使用智能问答功能'
+    return
+  }
   try {
     const res = await ragApi.getModels()
     if (res.data.code === 200) {
@@ -291,14 +391,18 @@ const loadModels = async () => {
       } else if (models.value.length > 0) {
         currentModelId.value = models.value[0].id
       }
+      authError.value = ''
     }
   } catch (e) {
     console.error('加载模型列表失败', e)
-    ElMessage.warning('无法连接到RAG服务，请确保RAG服务已启动')
+    if (e.response && e.response.status === 401) {
+      authError.value = e.response.data?.message || '登录已过期，请重新登录'
+    }
   }
 }
 
 const loadDocuments = async () => {
+  if (!hasToken.value) return
   loadingDocs.value = true
   try {
     const res = await ragApi.getDocuments(1, 100)
@@ -328,6 +432,8 @@ const handleSend = async () => {
     return
   }
 
+  handleUserActivity()
+
   messages.value.push({
     role: 'user',
     content: text
@@ -344,6 +450,10 @@ const handleSend = async () => {
     console.log('[Chat] Calling handleSyncQuery')
     await handleSyncQuery(text)
   }
+
+  setTimeout(() => {
+    loadQuota()
+  }, 500)
 }
 
 /**
@@ -376,9 +486,26 @@ const handleSyncQuery = async (text) => {
     }
   } catch (e) {
     console.error('查询失败', e)
+    let errorMsg = '抱歉，无法连接到问答服务，请检查RAG服务是否启动'
+
+    if (e.response) {
+      const status = e.response.status
+      const data = e.response.data
+
+      if (status === 429) {
+        errorMsg = '请求过于频繁，请稍后再试'
+      } else if (status === 403) {
+        errorMsg = data?.message || '今日配额已用完，请明天再试'
+      } else if (status === 401) {
+        errorMsg = '登录已过期，请重新登录'
+      } else if (status === 500) {
+        errorMsg = '服务内部错误: ' + (data?.message || '未知错误')
+      }
+    }
+
     messages.value.push({
       role: 'assistant',
-      content: '抱歉，无法连接到问答服务，请检查RAG服务是否启动',
+      content: errorMsg,
       showReferences: false
     })
   } finally {
@@ -592,8 +719,30 @@ onMounted(() => {
   if (savedStreamMode !== null) {
     streamMode.value = savedStreamMode === '1'
   }
+
+  if (hasToken.value) {
+    ragApi.resetAuthFailed()
+  }
+
   loadModels()
   loadDocuments()
+  loadQuota()
+  resetIdleTimer()
+
+  window.addEventListener('mousemove', handleUserActivity)
+  window.addEventListener('keydown', handleUserActivity)
+  window.addEventListener('click', handleUserActivity)
+  window.addEventListener('scroll', handleUserActivity)
+})
+
+onUnmounted(() => {
+  if (idleTimer) {
+    clearTimeout(idleTimer)
+  }
+  window.removeEventListener('mousemove', handleUserActivity)
+  window.removeEventListener('keydown', handleUserActivity)
+  window.removeEventListener('click', handleUserActivity)
+  window.removeEventListener('scroll', handleUserActivity)
 })
 </script>
 
@@ -733,6 +882,23 @@ onMounted(() => {
   gap: 16px;
 }
 
+.quota-info {
+  display: flex;
+  align-items: center;
+}
+
+.quota-text {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #67c23a;
+  font-weight: 500;
+  padding: 4px 10px;
+  background: #f0f9eb;
+  border-radius: 12px;
+}
+
 .mode-switch {
   display: flex;
   align-items: center;
@@ -778,6 +944,34 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  color: #909399;
+}
+
+.auth-error {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #606266;
+  text-align: center;
+}
+
+.auth-error-icon {
+  margin-bottom: 20px;
+  opacity: 0.8;
+}
+
+.auth-error h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  color: #e6a23c;
+  font-weight: 500;
+}
+
+.auth-error p {
+  margin: 0 0 24px 0;
+  font-size: 14px;
   color: #909399;
 }
 

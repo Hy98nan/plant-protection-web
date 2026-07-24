@@ -1,6 +1,6 @@
 <template>
   <div class="dashboard">
-    <!-- 统计卡片 -->
+    <!-- 任务统计卡片 -->
     <el-row :gutter="20" class="stat-cards">
       <el-col :xs="12" :sm="6">
         <div class="stat-card" style="background: linear-gradient(135deg, #667eea, #764ba2);">
@@ -48,33 +48,85 @@
       </el-col>
     </el-row>
 
+    <!-- 登录统计卡片 -->
+    <el-row :gutter="20" class="stat-cards">
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card" style="background: linear-gradient(135deg, #fa709a, #fee140);">
+          <div class="stat-icon">
+            <el-icon :size="32"><User /></el-icon>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value">{{ loginStats.todayLoginCount }}</div>
+            <div class="stat-label">今日登录人次</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card" style="background: linear-gradient(135deg, #30cfd0, #330867);">
+          <div class="stat-icon">
+            <el-icon :size="32"><UserFilled /></el-icon>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value">{{ loginStats.todayActiveUserCount }}</div>
+            <div class="stat-label">今日活跃用户</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card" style="background: linear-gradient(135deg, #f77062, #fe5196);">
+          <div class="stat-icon">
+            <el-icon :size="32"><Warning /></el-icon>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value">{{ loginStats.todayLoginFailCount }}</div>
+            <div class="stat-label">登录失败次数</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card" style="background: linear-gradient(135deg, #a8edea, #fed6e3);">
+          <div class="stat-icon">
+            <el-icon :size="32"><Monitor /></el-icon>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value">{{ loginStats.pcRatio }}%</div>
+            <div class="stat-label">PC端占比</div>
+          </div>
+        </div>
+      </el-col>
+    </el-row>
+
     <!-- 图表区域 -->
     <el-row :gutter="20" class="chart-row">
       <el-col :span="16">
         <el-card shadow="hover" class="chart-card">
           <template #header>
             <div class="card-header">
-              <span>近7天任务趋势</span>
-              <el-radio-group v-model="trendType" size="small">
-                <el-radio-button value="count">任务数量</el-radio-button>
-                <el-radio-button value="area">作业面积</el-radio-button>
+              <el-radio-group v-model="chartType" size="small">
+                <el-radio-button value="task">任务趋势</el-radio-button>
+                <el-radio-button value="login">登录趋势</el-radio-button>
               </el-radio-group>
             </div>
           </template>
-          <div ref="trendChartRef" class="chart-container"></div>
+          <div ref="mainChartRef" class="chart-container"></div>
         </el-card>
       </el-col>
       <el-col :span="8">
         <el-card shadow="hover" class="chart-card">
           <template #header>
-            <span>任务状态分布</span>
+            <div class="card-header">
+              <el-radio-group v-model="pieType" size="small">
+                <el-radio-button value="task">任务状态</el-radio-button>
+                <el-radio-button value="channel">渠道分布</el-radio-button>
+              </el-radio-group>
+            </div>
           </template>
-          <div ref="statusChartRef" class="chart-container"></div>
+          <div ref="pieChartRef" class="chart-container"></div>
         </el-card>
       </el-col>
     </el-row>
 
-    <!-- 待办事项和最近任务 -->
+    <!-- 底部列表 -->
     <el-row :gutter="20" class="info-row">
       <el-col :span="12">
         <el-card shadow="hover">
@@ -98,13 +150,20 @@
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
-              <span>最近任务</span>
-              <el-button type="primary" text size="small" @click="$router.push('/task/list')">
+              <el-radio-group v-model="listType" size="small">
+                <el-radio-button value="task">最近任务</el-radio-button>
+                <el-radio-button value="login">最近登录</el-radio-button>
+              </el-radio-group>
+              <el-button v-if="listType === 'task'" type="primary" text size="small" @click="$router.push('/task/list')">
+                查看全部
+              </el-button>
+              <el-button v-else type="primary" text size="small" @click="$router.push('/system/log/login')">
                 查看全部
               </el-button>
             </div>
           </template>
-          <el-table :data="recentTasks" stripe size="small" style="width: 100%">
+          <!-- 最近任务 -->
+          <el-table v-if="listType === 'task'" :data="recentTasks" stripe size="small" style="width: 100%">
             <el-table-column prop="taskNo" label="任务编号" width="120" />
             <el-table-column prop="farmlandName" label="地块" min-width="100" show-overflow-tooltip />
             <el-table-column prop="pilotName" label="飞手" width="80" />
@@ -116,6 +175,26 @@
               </template>
             </el-table-column>
             <el-table-column prop="scheduledDate" label="日期" width="110" />
+          </el-table>
+          <!-- 最近登录 -->
+          <el-table v-else :data="recentLogins" stripe size="small" style="width: 100%">
+            <el-table-column prop="username" label="用户名" width="120" />
+            <el-table-column prop="logType" label="类型" width="80">
+              <template #default="{ row }">
+                <el-tag :type="row.logType === 'login' ? 'primary' : 'info'" size="small">
+                  {{ row.logType === 'login' ? '登录' : '登出' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="80">
+              <template #default="{ row }">
+                <el-tag :type="row.status === 'success' ? 'success' : 'danger'" size="small">
+                  {{ row.status === 'success' ? '成功' : '失败' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="ip" label="IP" width="120" />
+            <el-table-column prop="createTime" label="时间" width="160" />
           </el-table>
         </el-card>
       </el-col>
@@ -129,13 +208,16 @@ import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { TASK_STATUS_LIST } from '@/utils/constants'
 import { getTaskStatistics, getTaskList } from '@/api/task'
+import { getLoginStats } from '@/api/dashboard'
 
 const router = useRouter()
-const trendChartRef = ref(null)
-const statusChartRef = ref(null)
-const trendType = ref('count')
-let trendChart = null
-let statusChart = null
+const mainChartRef = ref(null)
+const pieChartRef = ref(null)
+const chartType = ref('task')
+const pieType = ref('task')
+const listType = ref('task')
+let mainChart = null
+let pieChart = null
 
 const stats = ref({
   todayTotal: 0,
@@ -144,12 +226,22 @@ const stats = ref({
   completed: 0
 })
 
+const loginStats = ref({
+  todayLoginCount: 0,
+  todayActiveUserCount: 0,
+  todayLoginFailCount: 0,
+  pcRatio: 0,
+  recent7DaysTrend: [],
+  channelDistribution: {},
+  recentLogins: []
+})
+
 const todoList = ref([])
-
 const recentTasks = ref([])
+const recentLogins = ref([])
 
-// 加载统计数据
-async function loadStats() {
+// 加载任务统计
+async function loadTaskStats() {
   try {
     const res = await getTaskStatistics()
     if (res.data) {
@@ -161,7 +253,33 @@ async function loadStats() {
       }
     }
   } catch (e) {
-    console.error('加载统计数据失败', e)
+    console.error('加载任务统计失败', e)
+  }
+}
+
+// 加载登录统计
+async function loadLoginStats() {
+  try {
+    const res = await getLoginStats()
+    if (res.data) {
+      const data = res.data
+      loginStats.value.todayLoginCount = data.todayLoginCount || 0
+      loginStats.value.todayActiveUserCount = data.todayActiveUserCount || 0
+      loginStats.value.todayLoginFailCount = data.todayLoginFailCount || 0
+      loginStats.value.recent7DaysTrend = data.recent7DaysTrend || []
+      loginStats.value.channelDistribution = data.channelDistribution || {}
+      loginStats.value.recentLogins = data.recentLogins || []
+      recentLogins.value = data.recentLogins || []
+
+      // 计算 PC 端占比
+      const channelDist = data.channelDistribution || {}
+      const pcCount = channelDist.pc || 0
+      const mpCount = channelDist.mp || 0
+      const total = pcCount + mpCount
+      loginStats.value.pcRatio = total > 0 ? Math.round((pcCount / total) * 100) : 0
+    }
+  } catch (e) {
+    console.error('加载登录统计失败', e)
   }
 }
 
@@ -171,7 +289,6 @@ async function loadRecentTasks() {
     const res = await getTaskList({ pageNum: 1, pageSize: 5 })
     recentTasks.value = res.data.records || []
     
-    // 生成待办事项（基于任务状态）
     const todos = []
     recentTasks.value.forEach(task => {
       if (task.status === 'PENDING') {
@@ -212,48 +329,27 @@ function handleTodo(item) {
   router.push(`/task/detail/${item.id}`)
 }
 
-function initTrendChart() {
-  if (!trendChartRef.value) return
-  trendChart = echarts.init(trendChartRef.value)
-  updateTrendChart()
+function initMainChart() {
+  if (!mainChartRef.value) return
+  mainChart = echarts.init(mainChartRef.value)
+  updateMainChart()
 }
 
-function updateTrendChart() {
-  if (!trendChart) return
-  const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-  const option = {
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' }
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '3%',
-      top: '10%',
-      containLabel: true
-    },
-    xAxis: {
-      type: 'category',
-      data: days,
-      axisLine: { lineStyle: { color: '#ddd' } },
-      axisLabel: { color: '#666' }
-    },
-    yAxis: {
-      type: 'value',
-      name: trendType.value === 'count' ? '任务数(个)' : '面积(亩)',
-      axisLine: { show: false },
-      axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#f0f0f0' } }
-    },
-    series: [
-      {
-        name: trendType.value === 'count' ? '任务数' : '作业面积',
+function updateMainChart() {
+  if (!mainChart) return
+  
+  if (chartType.value === 'task') {
+    const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+    const option = {
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+      xAxis: { type: 'category', data: days, axisLine: { lineStyle: { color: '#ddd' } }, axisLabel: { color: '#666' } },
+      yAxis: { type: 'value', name: '任务数(个)', axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: '#f0f0f0' } } },
+      series: [{
+        name: '任务数',
         type: 'bar',
         barWidth: '40%',
-        data: trendType.value === 'count'
-          ? [stats.value.pending, stats.value.inProgress, stats.value.completed, 0, 0, 0, 0]
-          : [0, 0, 0, 0, 0, 0, 0],
+        data: [stats.value.pending, stats.value.inProgress, stats.value.completed, 0, 0, 0, 0],
         itemStyle: {
           borderRadius: [4, 4, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
@@ -261,75 +357,127 @@ function updateTrendChart() {
             { offset: 1, color: '#79bbff' }
           ])
         }
-      }
-    ]
+      }]
+    }
+    mainChart.setOption(option, true)
+  } else {
+    // 登录趋势
+    const trend = loginStats.value.recent7DaysTrend || []
+    const dates = trend.map(item => item.date ? item.date.substring(5) : '')
+    const counts = trend.map(item => item.count || 0)
+    
+    // 补全7天数据
+    while (dates.length < 7) {
+      dates.unshift('')
+      counts.unshift(0)
+    }
+    
+    const option = {
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+      xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#ddd' } }, axisLabel: { color: '#666' } },
+      yAxis: { type: 'value', name: '登录人次', axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: '#f0f0f0' } } },
+      series: [{
+        name: '登录人次',
+        type: 'line',
+        smooth: true,
+        data: counts,
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(250, 112, 154, 0.3)' },
+            { offset: 1, color: 'rgba(250, 112, 154, 0.05)' }
+          ])
+        },
+        itemStyle: { color: '#fa709a' },
+        lineStyle: { color: '#fa709a', width: 3 }
+      }]
+    }
+    mainChart.setOption(option, true)
   }
-  trendChart.setOption(option)
 }
 
-function initStatusChart() {
-  if (!statusChartRef.value) return
-  statusChart = echarts.init(statusChartRef.value)
-  const option = {
-    tooltip: {
-      trigger: 'item',
-      formatter: '{b}: {c} ({d}%)'
-    },
-    legend: {
-      bottom: '5%',
-      left: 'center',
-      textStyle: { fontSize: 12 }
-    },
-    series: [
-      {
+function initPieChart() {
+  if (!pieChartRef.value) return
+  pieChart = echarts.init(pieChartRef.value)
+  updatePieChart()
+}
+
+function updatePieChart() {
+  if (!pieChart) return
+  
+  if (pieType.value === 'task') {
+    const option = {
+      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      legend: { bottom: '5%', left: 'center', textStyle: { fontSize: 12 } },
+      series: [{
         type: 'pie',
         radius: ['40%', '70%'],
         center: ['50%', '45%'],
         avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 6,
-          borderColor: '#fff',
-          borderWidth: 2
-        },
-        label: {
-          show: true,
-          formatter: '{b}\n{d}%',
-          fontSize: 12
-        },
+        itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+        label: { show: true, formatter: '{b}\n{d}%', fontSize: 12 },
         data: [
           { value: stats.value.pending, name: '待确认', itemStyle: { color: '#E6A23C' } },
           { value: stats.value.inProgress, name: '执行中', itemStyle: { color: '#409EFF' } },
           { value: stats.value.completed, name: '已完成', itemStyle: { color: '#67C23A' } }
         ]
-      }
-    ]
+      }]
+    }
+    pieChart.setOption(option, true)
+  } else {
+    // 渠道分布
+    const channelDist = loginStats.value.channelDistribution || {}
+    const pcCount = channelDist.pc || 0
+    const mpCount = channelDist.mp || 0
+    
+    const option = {
+      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      legend: { bottom: '5%', left: 'center', textStyle: { fontSize: 12 } },
+      series: [{
+        type: 'pie',
+        radius: ['40%', '70%'],
+        center: ['50%', '45%'],
+        avoidLabelOverlap: false,
+        itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+        label: { show: true, formatter: '{b}\n{d}%', fontSize: 12 },
+        data: [
+          { value: pcCount, name: 'PC端', itemStyle: { color: '#409EFF' } },
+          { value: mpCount, name: '小程序', itemStyle: { color: '#67C23A' } }
+        ]
+      }]
+    }
+    pieChart.setOption(option, true)
   }
-  statusChart.setOption(option)
 }
 
 function handleResize() {
-  trendChart && trendChart.resize()
-  statusChart && statusChart.resize()
+  mainChart && mainChart.resize()
+  pieChart && pieChart.resize()
 }
 
-watch(trendType, () => {
-  nextTick(updateTrendChart)
+watch(chartType, () => {
+  nextTick(updateMainChart)
+})
+
+watch(pieType, () => {
+  nextTick(updatePieChart)
 })
 
 onMounted(async () => {
-  await loadStats()
+  await loadTaskStats()
+  await loadLoginStats()
   await loadRecentTasks()
   nextTick(() => {
-    initTrendChart()
-    initStatusChart()
+    initMainChart()
+    initPieChart()
   })
   window.addEventListener('resize', handleResize)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
-  trendChart && trendChart.dispose()
-  statusChart && statusChart.dispose()
+  mainChart && mainChart.dispose()
+  pieChart && pieChart.dispose()
 })
 </script>
 

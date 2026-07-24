@@ -68,6 +68,55 @@
           </el-col>
         </el-row>
 
+        <el-divider content-position="left">预估金额</el-divider>
+        <el-card v-if="pricePreview.totalAmount > 0 || pricePreview.servicePrice > 0" shadow="hover" class="price-preview-card">
+          <el-row :gutter="24">
+            <el-col :span="6">
+              <div class="price-item">
+                <div class="price-label">作业单价</div>
+                <div class="price-value">¥{{ pricePreview.servicePrice || 0 }}/亩</div>
+              </div>
+            </el-col>
+            <el-col :span="6" v-if="form.pesticideId">
+              <div class="price-item">
+                <div class="price-label">药剂单价</div>
+                <div class="price-value">¥{{ pricePreview.pesticidePrice || 0 }}/升</div>
+              </div>
+            </el-col>
+            <el-col :span="6" v-if="form.pesticideId">
+              <div class="price-item">
+                <div class="price-label">推荐用量</div>
+                <div class="price-value">{{ pricePreview.dosagePerAcre || 0 }} ml/亩</div>
+              </div>
+            </el-col>
+            <el-col :span="6">
+              <div class="price-item">
+                <div class="price-label">预估面积</div>
+                <div class="price-value">{{ form.plannedArea || 0 }} 亩</div>
+              </div>
+            </el-col>
+          </el-row>
+          <el-divider />
+          <el-row :gutter="24">
+            <el-col :span="form.pesticideId ? 12 : 24">
+              <div class="price-item">
+                <div class="price-label">作业费用</div>
+                <div class="price-value highlight">¥{{ pricePreview.serviceFee || 0 }}</div>
+              </div>
+            </el-col>
+            <el-col :span="12" v-if="form.pesticideId">
+              <div class="price-item">
+                <div class="price-label">药剂费用</div>
+                <div class="price-value">¥{{ pricePreview.pesticideCost || 0 }}</div>
+              </div>
+            </el-col>
+          </el-row>
+          <div class="total-price-row">
+            <span class="total-label">预估合计</span>
+            <span class="total-value">¥{{ pricePreview.totalAmount || 0 }}</span>
+          </div>
+        </el-card>
+
         <el-divider content-position="left">调度信息</el-divider>
         <el-row :gutter="24">
           <el-col :span="12">
@@ -109,7 +158,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { debounce } from 'lodash-es'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { TASK_TYPES } from '@/utils/constants'
@@ -119,6 +169,7 @@ import { getFarmlandOptions } from '@/api/farmland'
 import { getDroneOptions } from '@/api/drone'
 import { getPesticideOptions } from '@/api/pesticide'
 import { getPilotOptions } from '@/api/pilot'
+import { calculatePrice } from '@/api/priceConfig'
 
 const router = useRouter()
 const route = useRoute()
@@ -158,6 +209,15 @@ const pesticideOptions = ref([])
 const pilotOptions = ref([])
 const droneOptions = ref([])
 
+const pricePreview = reactive({
+  servicePrice: 0,
+  pesticidePrice: 0,
+  dosagePerAcre: 0,
+  serviceFee: 0,
+  pesticideCost: 0,
+  totalAmount: 0
+})
+
 const filteredFarmlandOptions = computed(() => {
   if (!form.customerId) return farmlandOptions.value
   return farmlandOptions.value.filter(item => item.customerId === form.customerId)
@@ -184,6 +244,27 @@ async function loadOptions() {
 
 function handleCustomerChange() {
   form.farmlandId = ''
+}
+
+async function fetchPricePreview() {
+  if (!form.plannedArea) {
+    Object.assign(pricePreview, { servicePrice: 0, pesticidePrice: 0, dosagePerAcre: 0, serviceFee: 0, pesticideCost: 0, totalAmount: 0 })
+    return
+  }
+  try {
+    const params = {
+      area: form.plannedArea,
+      pesticideId: form.pesticideId || undefined,
+      cropType: form.cropType || undefined,
+      taskType: form.taskType || undefined
+    }
+    const res = await calculatePrice(params)
+    if (res.data) {
+      Object.assign(pricePreview, res.data)
+    }
+  } catch (error) {
+    console.error('获取预估金额失败', error)
+  }
 }
 
 async function handleSubmit() {
@@ -253,6 +334,17 @@ async function loadDraft() {
   }
 }
 
+const debouncedFetchPrice = debounce(() => {
+  fetchPricePreview()
+}, 500)
+
+watch(
+  () => [form.plannedArea, form.pesticideId, form.taskType, form.cropType],
+  () => {
+    debouncedFetchPrice()
+  }
+)
+
 onMounted(async () => {
   await loadOptions()
   if (isEdit.value) {
@@ -275,5 +367,52 @@ onMounted(async () => {
 
 .task-form {
   max-width: 900px;
+}
+
+.price-preview-card {
+  margin-bottom: 20px;
+}
+
+.price-item {
+  text-align: center;
+  padding: 8px 0;
+}
+
+.price-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+
+.price-value {
+  font-size: 14px;
+  color: #303133;
+  font-weight: 500;
+
+  &.highlight {
+    color: #4CAF50;
+    font-weight: 600;
+  }
+}
+
+.total-price-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed #EBEEF5;
+}
+
+.total-label {
+  font-size: 16px;
+  color: #606266;
+  font-weight: 500;
+}
+
+.total-value {
+  font-size: 24px;
+  color: #D32F2F;
+  font-weight: 700;
 }
 </style>

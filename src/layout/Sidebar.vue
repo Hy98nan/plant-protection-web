@@ -22,7 +22,7 @@
               <span>{{ route.meta.title }}</span>
             </template>
             <el-menu-item
-              v-for="child in route.children"
+              v-for="child in route.children.filter(c => !c.meta?.hidden)"
               :key="child.path"
               :index="`${route.path}/${child.path}`"
             >
@@ -143,7 +143,9 @@ const allRoutes = [
     children: [
       { path: 'user', meta: { title: '用户管理', roles: ['ADMIN'] } },
       { path: 'role', meta: { title: '角色管理', roles: ['ADMIN'] } },
-      { path: 'menu', meta: { title: '菜单管理', roles: ['ADMIN'] } }
+      { path: 'menu', meta: { title: '菜单管理', roles: ['ADMIN'] } },
+      { path: 'log/login', meta: { title: '登录日志', roles: ['ADMIN'] } },
+      { path: 'log/operation', meta: { title: '操作日志', roles: ['ADMIN'] } }
     ]
   }
 ]

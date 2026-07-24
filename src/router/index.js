@@ -183,6 +183,20 @@ const routes = [
         ]
       },
       {
+        path: 'price',
+        name: 'Price',
+        redirect: '/price/list',
+        meta: { title: '定价管理', icon: 'Wallet', roles: ['ADMIN', 'FINANCE'] },
+        children: [
+          {
+            path: 'list',
+            name: 'PriceList',
+            component: () => import('@/views/price/PriceList.vue'),
+            meta: { title: '定价列表', roles: ['ADMIN', 'FINANCE'] }
+          }
+        ]
+      },
+      {
         path: 'report',
         name: 'Report',
         redirect: '/report/performance',
@@ -243,6 +257,18 @@ const routes = [
             name: 'MenuList',
             component: () => import('@/views/system/MenuList.vue'),
             meta: { title: '菜单管理', roles: ['ADMIN'] }
+          },
+          {
+            path: 'log/login',
+            name: 'LoginLog',
+            component: () => import('@/views/log/LoginLog.vue'),
+            meta: { title: '登录日志', roles: ['ADMIN'] }
+          },
+          {
+            path: 'log/operation',
+            name: 'OperationLog',
+            component: () => import('@/views/log/OperationLog.vue'),
+            meta: { title: '操作日志', roles: ['ADMIN'] }
           },
           {
             path: 'profile',
