@@ -14,33 +14,11 @@
         active-text-color="#409EFF"
         router
       >
-        <template v-for="route in menuRoutes" :key="route.path">
-          <!-- 有子菜单 -->
-          <el-sub-menu v-if="route.children && route.children.length > 1" :index="route.path">
-            <template #title>
-              <el-icon><component :is="route.meta.icon" /></el-icon>
-              <span>{{ route.meta.title }}</span>
-            </template>
-            <el-menu-item
-              v-for="child in route.children.filter(c => !c.meta?.hidden)"
-              :key="child.path"
-              :index="`${route.path}/${child.path}`"
-            >
-              <el-icon v-if="child.meta.icon"><component :is="child.meta.icon" /></el-icon>
-              <span>{{ child.meta.title }}</span>
-            </el-menu-item>
-          </el-sub-menu>
-          <!-- 单子菜单或无子菜单 -->
-          <el-menu-item
-            v-else
-            :index="route.children && route.children.length === 1 ? `${route.path}/${route.children[0].path}` : route.path"
-          >
-            <el-icon><component :is="route.meta.icon" /></el-icon>
-            <template #title>
-              <span>{{ route.meta.title }}</span>
-            </template>
-          </el-menu-item>
-        </template>
+        <menu-item
+          v-for="route in menuRoutes"
+          :key="route.fullPath"
+          :menu="route"
+        />
       </el-menu>
     </el-scrollbar>
   </el-aside>
@@ -50,6 +28,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import MenuItem from './MenuItem.vue'
 
 defineProps({
   isCollapse: {
@@ -65,103 +44,45 @@ const activeMenu = computed(() => {
   return route.path
 })
 
-const allRoutes = [
-  {
-    path: '/dashboard',
-    meta: { title: '首页', icon: 'Odometer', roles: ['ADMIN', 'DISPATCHER', 'PILOT', 'FINANCE'] }
-  },
-  {
-    path: '/task',
-    meta: { title: '任务管理', icon: 'List', roles: ['ADMIN', 'DISPATCHER', 'PILOT'] },
-    children: [
-      { path: 'list', meta: { title: '任务列表', roles: ['ADMIN', 'DISPATCHER', 'PILOT'] } },
-      { path: 'create', meta: { title: '创建任务', roles: ['ADMIN', 'DISPATCHER'] } }
-    ]
-  },
-  {
-    path: '/pilot',
-    meta: { title: '飞手管理', icon: 'User', roles: ['ADMIN', 'DISPATCHER'] },
-    children: [
-      { path: 'list', meta: { title: '飞手列表', roles: ['ADMIN', 'DISPATCHER'] } }
-    ]
-  },
-  {
-    path: '/customer',
-    meta: { title: '客户管理', icon: 'Avatar', roles: ['ADMIN', 'DISPATCHER'] },
-    children: [
-      { path: 'list', meta: { title: '客户列表', roles: ['ADMIN', 'DISPATCHER'] } }
-    ]
-  },
-  {
-    path: '/farmland',
-    meta: { title: '地块管理', icon: 'MapLocation', roles: ['ADMIN', 'DISPATCHER'] },
-    children: [
-      { path: 'list', meta: { title: '地块列表', roles: ['ADMIN', 'DISPATCHER'] } }
-    ]
-  },
-  {
-    path: '/drone',
-    meta: { title: '无人机管理', icon: 'Position', roles: ['ADMIN', 'DISPATCHER'] },
-    children: [
-      { path: 'list', meta: { title: '无人机列表', roles: ['ADMIN', 'DISPATCHER'] } }
-    ]
-  },
-  {
-    path: '/battery',
-    meta: { title: '电池管理', icon: 'Lightning', roles: ['ADMIN', 'DISPATCHER'] },
-    children: [
-      { path: 'list', meta: { title: '电池列表', roles: ['ADMIN', 'DISPATCHER'] } }
-    ]
-  },
-  {
-    path: '/pesticide',
-    meta: { title: '药剂管理', icon: 'Box', roles: ['ADMIN', 'DISPATCHER'] },
-    children: [
-      { path: 'list', meta: { title: '药剂列表', roles: ['ADMIN', 'DISPATCHER'] } }
-    ]
-  },
-  {
-    path: '/settlement',
-    meta: { title: '结算管理', icon: 'Money', roles: ['ADMIN', 'FINANCE'] },
-    children: [
-      { path: 'list', meta: { title: '结算列表', roles: ['ADMIN', 'FINANCE'] } }
-    ]
-  },
-  {
-    path: '/report',
-    meta: { title: '报表统计', icon: 'DataAnalysis', roles: ['ADMIN', 'FINANCE'] },
-    children: [
-      { path: 'performance', meta: { title: '飞手绩效', roles: ['ADMIN', 'FINANCE'] } },
-      { path: 'drone-usage', meta: { title: '无人机利用率', roles: ['ADMIN', 'FINANCE'] } },
-      { path: 'pesticide', meta: { title: '药剂消耗', roles: ['ADMIN', 'FINANCE'] } },
-      { path: 'monthly', meta: { title: '月度分析', roles: ['ADMIN', 'FINANCE'] } }
-    ]
-  },
-  {
-    path: '/system',
-    meta: { title: '系统管理', icon: 'Setting', roles: ['ADMIN'] },
-    children: [
-      { path: 'user', meta: { title: '用户管理', roles: ['ADMIN'] } },
-      { path: 'role', meta: { title: '角色管理', roles: ['ADMIN'] } },
-      { path: 'menu', meta: { title: '菜单管理', roles: ['ADMIN'] } },
-      { path: 'log/login', meta: { title: '登录日志', roles: ['ADMIN'] } },
-      { path: 'log/operation', meta: { title: '操作日志', roles: ['ADMIN'] } }
-    ]
-  }
-]
+function transformMenus(menus, parentPath = '') {
+  if (!menus || menus.length === 0) return []
+  return menus
+    .filter(m => m.visible === 1 && m.status === 1 && m.menuType !== 'button')
+    .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+    .map(m => {
+      const fullPath = m.path || ''
+      let relativePath = fullPath
+      if (parentPath && fullPath.startsWith(parentPath + '/')) {
+        relativePath = fullPath.substring(parentPath.length + 1)
+      } else if (parentPath && fullPath === parentPath) {
+        relativePath = ''
+      } else {
+        relativePath = fullPath.replace(/^\//, '')
+      }
+
+      const childRoute = {
+        path: relativePath,
+        fullPath: fullPath,
+        meta: {
+          title: m.menuName,
+          icon: m.icon || undefined
+        }
+      }
+
+      if (m.children && m.children.length > 0) {
+        const transformedChildren = transformMenus(m.children, fullPath)
+        if (transformedChildren.length > 0) {
+          childRoute.children = transformedChildren
+        }
+      }
+
+      return childRoute
+    })
+}
 
 const menuRoutes = computed(() => {
-  const roleCodes = userStore.roleCodes || []
-  // 超级管理员拥有所有菜单
-  if (roleCodes.includes('SUPER_ADMIN')) {
-    return allRoutes
-  }
-  return allRoutes.filter(r => {
-    if (!r.meta.roles || r.meta.roles.length === 0) {
-      return true
-    }
-    return r.meta.roles.some(role => roleCodes.includes(role))
-  })
+  const menus = userStore.menus || []
+  return transformMenus(menus)
 })
 </script>
 

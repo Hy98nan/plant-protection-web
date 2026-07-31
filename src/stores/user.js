@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { login, getUserInfo, logout } from '@/api/auth'
+import { getCurrentMenus } from '@/api/menu'
 import {
   getToken,
   setToken,
@@ -21,6 +22,7 @@ export const useUserStore = defineStore('user', () => {
   const avatar = ref('')
   const totalArea = ref(0)
   const totalTaskCount = ref(0)
+  const menus = ref([])
 
   async function userLogin(loginForm) {
     const res = await login(loginForm)
@@ -43,6 +45,8 @@ export const useUserStore = defineStore('user', () => {
     roleCodes.value = res.data.roleCodes || []
     permissions.value = res.data.permissions || []
 
+    await fetchMenus()
+
     return res
   }
 
@@ -60,6 +64,8 @@ export const useUserStore = defineStore('user', () => {
 
     totalArea.value = res.data.totalArea || 0
     totalTaskCount.value = res.data.totalTaskCount || 0
+
+    await fetchMenus()
 
     return res.data
   }
@@ -88,6 +94,17 @@ export const useUserStore = defineStore('user', () => {
     avatar.value = ''
     totalArea.value = 0
     totalTaskCount.value = 0
+    menus.value = []
+  }
+
+  async function fetchMenus() {
+    try {
+      const res = await getCurrentMenus()
+      menus.value = res.data || []
+    } catch (e) {
+      console.warn('获取菜单失败:', e)
+      menus.value = []
+    }
   }
 
   return {
@@ -102,9 +119,11 @@ export const useUserStore = defineStore('user', () => {
     avatar,
     totalArea,
     totalTaskCount,
+    menus,
     userLogin,
     getUserInfo: getUserInfoAction,
     userLogout,
-    resetState
+    resetState,
+    fetchMenus
   }
 })

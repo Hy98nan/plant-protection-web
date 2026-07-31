@@ -116,7 +116,7 @@
       </el-form>
       <template #footer>
         <el-button @click="assignDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleAssign">确定</el-button>
+        <el-button type="primary" @click="handleAssign" :loading="submitLoading">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -135,6 +135,7 @@ import { getDroneOptions } from '@/api/drone'
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
+const submitLoading = ref(false)
 const assignDialogVisible = ref(false)
 
 const taskInfo = ref(null)
@@ -252,6 +253,7 @@ async function handleAssign() {
     ElMessage.warning('请选择飞手')
     return
   }
+  submitLoading.value = true
   try {
     if (taskInfo.value?.status === 'PENDING') {
       await assignPilot(taskInfo.value.id, assignForm)
@@ -263,6 +265,8 @@ async function handleAssign() {
     fetchDetail()
   } catch (error) {
     ElMessage.error('操作失败')
+  } finally {
+    submitLoading.value = false
   }
 }
 

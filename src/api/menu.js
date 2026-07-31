@@ -8,6 +8,10 @@ export function getMenuTree() {
   return request({ url: '/menus/tree', method: 'get' })
 }
 
+export function getCurrentMenus() {
+  return request({ url: '/menus/current', method: 'get' })
+}
+
 export function getMenuDetail(id) {
   return request({ url: `/menus/${id}`, method: 'get' })
 }

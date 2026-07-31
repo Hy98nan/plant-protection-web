@@ -9,6 +9,15 @@
       </template>
 
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" size="large" style="max-width: 800px;">
+        <el-row :gutter="20" v-if="isSuperAdmin">
+          <el-col :span="12">
+            <el-form-item label="所属租户" prop="tenantId">
+              <el-select v-model="form.tenantId" placeholder="请选择租户" style="width: 100%">
+                <el-option v-for="item in tenantOptions" :key="item.id" :label="item.name" :value="item.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="用户名" prop="username">
@@ -49,8 +58,8 @@
           <el-col :span="12">
             <el-form-item label="性别" prop="gender">
               <el-radio-group v-model="form.gender">
-                <el-radio :label="1">男</el-radio>
-                <el-radio :label="0">女</el-radio>
+                <el-radio :value="1">男</el-radio>
+                <el-radio :value="0">女</el-radio>
               </el-radio-group>
             </el-form-item>
           </el-col>
@@ -116,6 +125,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getUserDetail, createUser, updateUser } from '@/api/user'
 import { getAllEnabledRoles } from '@/api/role'
+import { getAllTenants } from '@/api/tenant'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
@@ -123,8 +134,12 @@ const formRef = ref(null)
 const submitting = ref(false)
 const isEdit = computed(() => !!route.params.id)
 const roleOptions = ref([])
+const tenantOptions = ref([])
+const userStore = useUserStore()
+const isSuperAdmin = computed(() => userStore.roleCodes?.includes('SUPER_ADMIN'))
 
 const form = reactive({
+  tenantId: null,
   username: '',
   realName: '',
   phone: '',
@@ -172,6 +187,18 @@ async function loadRoleOptions() {
   }
 }
 
+async function loadTenantOptions() {
+  if (!isSuperAdmin.value) return
+  try {
+    const res = await getAllTenants()
+    if (res.code === 200) {
+      tenantOptions.value = res.data
+    }
+  } catch (error) {
+    console.error('获取租户列表失败', error)
+  }
+}
+
 async function handleSubmit() {
   if (!formRef.value) return
   await formRef.value.validate(async (valid) => {
@@ -198,10 +225,30 @@ async function handleSubmit() {
 
 onMounted(async () => {
   await loadRoleOptions()
+  await loadTenantOptions()
   if (isEdit.value) {
     try {
       const res = await getUserDetail(route.params.id)
-      Object.assign(form, res.data)
+      const data = res.data
+      Object.assign(form, {
+        tenantId: data.tenantId,
+        username: data.username,
+        realName: data.realName,
+        phone: data.phone,
+        email: data.email,
+        employeeNo: data.employeeNo,
+        department: data.department,
+        gender: data.gender,
+        birthDate: data.birthDate,
+        idCard: data.idCard,
+        address: data.address,
+        emergencyContact: data.emergencyContact,
+        emergencyPhone: data.emergencyPhone,
+        hireDate: data.hireDate,
+        roleIds: data.roleIds || [],
+        status: data.status,
+        remark: data.remark
+      })
     } catch (error) {
       ElMessage.error('获取用户信息失败')
     }

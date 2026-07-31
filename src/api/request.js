@@ -145,6 +145,11 @@ service.interceptors.response.use(
         handleUnauthorized('登录已过期，请重新登录')
       } else if (status === 403) {
         ElMessage.error('没有权限访问')
+        // 避免在 dashboard 或 login 页重复跳转
+        const currentPath = router.currentRoute.value.path
+        if (currentPath !== '/dashboard' && currentPath !== '/login') {
+          router.replace('/dashboard')
+        }
       } else if (status === 404) {
         ElMessage.error('请求资源不存在')
       } else if (status === 500) {

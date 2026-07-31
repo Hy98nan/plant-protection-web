@@ -122,7 +122,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <el-button type="primary" @click="handleSubmit" :loading="submitLoading">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -135,6 +135,7 @@ import { getPriceConfigPage, createPriceConfig, updatePriceConfig, deletePriceCo
 
 const dialogVisible = ref(false)
 const isEdit = ref(false)
+const submitLoading = ref(false)
 const formRef = ref(null)
 const tableData = ref([])
 const loading = ref(false)
@@ -258,6 +259,7 @@ const handleSubmit = async () => {
   if (!formRef.value) return
   await formRef.value.validate(async (valid) => {
     if (!valid) return
+    submitLoading.value = true
     try {
       if (isEdit.value) {
         await updatePriceConfig(form.id, form)
@@ -270,6 +272,8 @@ const handleSubmit = async () => {
       loadData()
     } catch (error) {
       ElMessage.error('操作失败')
+    } finally {
+      submitLoading.value = false
     }
   })
 }

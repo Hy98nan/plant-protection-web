@@ -96,7 +96,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSave">确定</el-button>
+        <el-button type="primary" @click="handleSave" :loading="submitLoading">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -107,6 +107,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const loading = ref(false)
+const submitLoading = ref(false)
 const total = ref(0)
 const tableData = ref([])
 const dialogVisible = ref(false)
@@ -158,9 +159,14 @@ async function handleSave() {
   if (!formRef.value) return
   await formRef.value.validate(async (valid) => {
     if (!valid) return
-    ElMessage.success(form.id ? '修改成功' : '新增成功')
-    dialogVisible.value = false
-    fetchData()
+    submitLoading.value = true
+    try {
+      ElMessage.success(form.id ? '修改成功' : '新增成功')
+      dialogVisible.value = false
+      fetchData()
+    } finally {
+      submitLoading.value = false
+    }
   })
 }
 

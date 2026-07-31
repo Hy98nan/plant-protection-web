@@ -51,9 +51,7 @@
           </el-button>
         </el-form-item>
       </el-form>
-      <div class="login-footer">
-        <span>默认账号: admin / admin123</span>
-      </div>
+
     </div>
   </div>
 </template>
@@ -70,9 +68,9 @@ const loginFormRef = ref(null)
 const loading = ref(false)
 
 const loginForm = reactive({
-  username: 'admin',
-  password: 'admin123',
-  remember: true
+  username: '',
+  password: '',
+  remember: false
 })
 
 const loginRules = {
@@ -209,10 +207,5 @@ async function handleLogin() {
   border-radius: 8px;
 }
 
-.login-footer {
-  text-align: center;
-  margin-top: 16px;
-  color: #999;
-  font-size: 12px;
-}
+
 </style>

@@ -174,7 +174,7 @@ async function handleDelete(row) {
   margin-bottom: 20px;
 }
 
-:deep(.el-form-item__label) {
+.search-bar :deep(.el-form-item__label) {
   color: #fff;
 }
 
